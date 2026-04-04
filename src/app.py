@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from controller.rest_api.chat_controller import create_chat_routes
+from websocket.chat_ws import router as chat_ws_router
 
 
 def create_application() -> FastAPI:
@@ -23,6 +24,7 @@ def create_application() -> FastAPI:
     )
 
     app.include_router(create_chat_routes())
+    app.include_router(chat_ws_router)
 
     return app
 
