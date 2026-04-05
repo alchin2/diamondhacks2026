@@ -25,6 +25,7 @@ export default defineConfig({
       '/chatrooms': 'http://localhost:8000',
       '/negotiate': 'http://localhost:8000',
       '/match': 'http://localhost:8000',
+      '/uploads': 'http://localhost:8000',
     },
   },
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
