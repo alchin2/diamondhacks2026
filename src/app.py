@@ -1,8 +1,11 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from controller.rest_api.chat_controller import create_chat_routes
 from controller.rest_api.item_controller import create_item_routes
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
 def create_application() -> FastAPI:
     app = FastAPI(
@@ -12,6 +15,7 @@ def create_application() -> FastAPI:
         license_info={"name": "MIT License"},
         openapi_tags=[
             {"name": "Chat", "description": "Chatroom management for deals"},
+            {"name": "Negotiation", "description": "AI agent deal negotiation"},
         ],
     )
 
@@ -27,6 +31,5 @@ def create_application() -> FastAPI:
     app.include_router(create_item_routes())
 
     return app
-
 
 app = create_application()
