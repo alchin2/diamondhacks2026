@@ -26,6 +26,87 @@ This document describes the current HTTP API exposed by the FastAPI application 
 | `500` | `configuration_error` or `internal_error` | Server configuration or unexpected failure |
 | `502` | `external_service_error` | A dependent external service failed |
 
+## Uploads
+
+Base path: `/uploads`
+
+Use this endpoint before creating an item when the frontend needs to upload image files to S3.
+
+Backend configuration:
+
+- Bucket env: `AWS_S3_BUCKET`
+- Region env: `AWS_REGION`
+- Access key env: `AWS_ACCESS_KEY_ID` or legacy `ACCESS_KEY`
+- Secret key env: `AWS_SECRET_ACCESS_KEY` or legacy `SECRET_ACCESS_KEY`
+
+Current project bucket:
+
+- `diamondhack-tradingshop`
+
+Recommended flow:
+
+1. Call `POST /uploads/presign` once per image.
+2. Upload the file bytes from the frontend directly to the returned `upload_url` using the returned HTTP method and headers.
+3. Collect each returned `file_url`.
+4. Call `POST /items/` with those URLs in `image_urls`.
+
+### `POST /uploads/presign`
+
+Create a presigned S3 upload URL for an image file.
+
+Request body:
+
+```json
+{
+  "file_name": "ti84-front.png",
+  "content_type": "image/png",
+  "folder": "items"
+}
+```
+
+Fields:
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `file_name` | string | yes | Original file name, must include extension |
+| `content_type` | string | yes | Must be an image MIME type like `image/png` |
+| `folder` | string | no | S3 key prefix, defaults to `items` |
+
+Success response: `200 OK`
+
+Example response:
+
+```json
+{
+  "upload_url": "https://diamondhack-tradingshop.s3.amazonaws.com/items/5b8f2d9d-0b84-4422-9f74-2f5d6e08af95.png?...",
+  "file_url": "https://diamondhack-tradingshop.s3.amazonaws.com/items/5b8f2d9d-0b84-4422-9f74-2f5d6e08af95.png",
+  "object_key": "items/5b8f2d9d-0b84-4422-9f74-2f5d6e08af95.png",
+  "method": "PUT",
+  "headers": {
+    "Content-Type": "image/png"
+  },
+  "expires_in": 900,
+  "bucket": "diamondhack-tradingshop",
+  "region": "us-east-1"
+}
+```
+
+Frontend upload example:
+
+```http
+PUT {upload_url}
+Content-Type: image/png
+
+<raw file bytes>
+```
+
+Notes:
+
+- The upload URL is short-lived and currently expires after `900` seconds.
+- The backend only presigns uploads for content types beginning with `image/`.
+- The backend generates a unique S3 object key and returns the final public/object URL as `file_url`.
+- `file_url` is the value you should send later in `POST /items/` or `PATCH /items/{item_id}`.
+
 ## System
 
 ### `GET /health`
@@ -211,7 +292,7 @@ Success response: `201 Created`
 Notes:
 
 - After item creation, a background task is scheduled to re-evaluate price and category using the pricing agent.
-- You must upload at least one image before calling `POST /items/`.
+  - You must upload at least one image before calling `POST /items/`.
 - The API accepts `image_urls` and stores them in the database `image_url` text column as a comma-separated string.
 
 ## Uploads
@@ -277,7 +358,11 @@ Request body example:
 ```json
 {
   "price": 55,
-  "condition": "like_new"
+  "condition": "like_new",
+  "image_urls": [
+    "https://diamondhack-tradingshop.s3.amazonaws.com/items/ti84-front.png",
+    "https://diamondhack-tradingshop.s3.amazonaws.com/items/ti84-back.png"
+  ]
 }
 ```
 
