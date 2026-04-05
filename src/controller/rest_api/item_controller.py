@@ -31,7 +31,7 @@ def create_item_routes() -> APIRouter:
             condition=request.condition,
             price=request.price,
             confidence_score=request.confidence_score,
-            image_url=request.image_url,
+            image_urls=[str(url) for url in request.image_urls],
         )
         background_tasks.add_task(
             pricing_agent.get_aggregated_price_and_category,

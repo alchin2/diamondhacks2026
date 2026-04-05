@@ -9,6 +9,7 @@ from controller.rest_api.deal_contoller import create_deal_routes
 from controller.rest_api.item_controller import create_item_routes
 from controller.rest_api.match_controller import create_match_routes
 from controller.rest_api.negotiation_controller import create_negotiation_routes
+from controller.rest_api.upload_controller import create_upload_routes
 from controller.rest_api.user_controller import create_user_routes
 from core.exceptions import AppError
 
@@ -29,6 +30,7 @@ def create_application() -> FastAPI:
             {"name": "Items", "description": "Marketplace inventory management"},
             {"name": "Negotiation", "description": "AI agent deal negotiation"},
             {"name": "Matching", "description": "Smart trade matching"},
+            {"name": "Uploads", "description": "S3 upload preparation endpoints"},
             {"name": "Users", "description": "User profiles and preferences"},
             {"name": "System", "description": "Operational endpoints"},
         ],
@@ -67,6 +69,7 @@ def create_application() -> FastAPI:
     app.include_router(create_item_routes())
     app.include_router(create_match_routes())
     app.include_router(create_negotiation_routes())
+    app.include_router(create_upload_routes())
     app.include_router(create_user_routes())
 
     return app
