@@ -17,12 +17,10 @@ def _split_image_urls(raw_value: Optional[str]) -> list[str]:
     return [url.strip() for url in raw_value.split(",") if url.strip()]
 
 
-def _join_image_urls(image_urls: Optional[list[str]]) -> Optional[str]:
-    if not image_urls:
-        return None
+def _join_image_urls(image_urls: list[str]) -> str:
     cleaned_urls = [url.strip() for url in image_urls if url and url.strip()]
     if not cleaned_urls:
-        return None
+        raise ValidationError("At least one image URL is required.")
     return ",".join(cleaned_urls)
 
 # Schema Definitions
@@ -33,7 +31,7 @@ class ItemBase(BaseModel):
     condition: str = Field(min_length=1, max_length=40)
     price: float = Field(gt=0)
     confidence_score: Optional[float] = Field(default=None, ge=0, le=1)
-    image_urls: list[AnyHttpUrl] = Field(default_factory=list)
+    image_urls: list[AnyHttpUrl] = Field(min_length=1)
 
     @model_validator(mode="before")
     @classmethod
@@ -46,8 +44,6 @@ class ItemBase(BaseModel):
             raw_value = normalized.get("image_url")
             if isinstance(raw_value, str):
                 normalized["image_urls"] = _split_image_urls(raw_value)
-            elif raw_value is None:
-                normalized["image_urls"] = []
         return normalized
 
 class ItemCreate(ItemBase):
@@ -72,8 +68,6 @@ class ItemUpdate(BaseModel):
             raw_value = normalized.get("image_url")
             if isinstance(raw_value, str):
                 normalized["image_urls"] = _split_image_urls(raw_value)
-            elif raw_value is None:
-                normalized["image_urls"] = []
         return normalized
 
 class Item(ItemBase):
@@ -115,6 +109,8 @@ class ItemService(SupabaseService):
         owner_id = self.require_identifier(owner_id, "owner_id")
         if price <= 0:
             raise ValidationError("price must be greater than zero.")
+        if not image_urls:
+            raise ValidationError("At least one uploaded image is required to create an item.")
         try:
             new_item_data = {
                 "id": str(uuid4()),
@@ -150,9 +146,8 @@ class ItemService(SupabaseService):
 
         if "image_urls" in update_data:
             raw_image_urls = update_data.pop("image_urls")
-            update_data["image_url"] = _join_image_urls(
-                [str(url) for url in raw_image_urls] if raw_image_urls is not None else []
-            )
+            if raw_image_urls is not None:
+                update_data["image_url"] = _join_image_urls([str(url) for url in raw_image_urls])
 
         try:
             response = self.client.table("items").update(update_data).eq("id", item_id).execute()

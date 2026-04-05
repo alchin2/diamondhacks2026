@@ -1,36 +1,82 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router";
-import { ArrowLeft, ArrowRightLeft, AlertCircle } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft } from "lucide-react";
+import { ImageWithFallback } from "./figma/ImageWithFallback";
+
+const FALLBACK_IMAGE = "https://via.placeholder.com/800x600?text=No+Image";
+
+type TradeItem = {
+  id: string;
+  owner_id: string;
+  name: string;
+  price: number;
+  image_urls?: string[];
+};
 
 export function ProposeTrade() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [selectedItem, setSelectedItem] = useState("1");
+  const [theirItem, setTheirItem] = useState<TradeItem | null>(null);
+  const [myItems, setMyItems] = useState<TradeItem[]>([]);
+  const [selectedItem, setSelectedItem] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  // Mock data
-  const theirItem = {
-    id,
-    name: "Calculus Textbook",
-    image: "https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=400",
-    estimatedValue: 45,
-  };
+  // Use real user UUID
+  const userId = "19497467-e10b-4124-a65b-68c3f6b26be7";
 
-  const myItems = [
-    { id: "1", name: "iClicker 2", image: "https://images.unsplash.com/photo-1550009158-9ebf69173e03?w=400", estimatedValue: 40 },
-    { id: "2", name: "Mini Fridge", image: "https://images.unsplash.com/photo-1584568694244-14fbdf83bd30?w=400", estimatedValue: 65 },
-    { id: "3", name: "Desk Lamp", image: "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=400", estimatedValue: 20 },
-  ];
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([
+      fetch(`/items/${id}`).then((res) => {
+        if (!res.ok) throw new Error("Failed to fetch item");
+        return res.json();
+      }),
+      fetch("/items/").then((res) => {
+        if (!res.ok) throw new Error("Failed to fetch my items");
+        return res.json();
+      })
+    ])
+      .then(([itemData, myItemsData]) => {
+        setTheirItem(itemData);
+        const ownedItems = myItemsData.filter((item: TradeItem) => item.owner_id === userId);
+        setMyItems(ownedItems);
+        setSelectedItem(ownedItems[0]?.id || "");
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, [id, userId]);
 
-  const selectedMyItem = myItems.find((item) => item.id === selectedItem)!;
-  const cashDifference = theirItem.estimatedValue - selectedMyItem.estimatedValue;
-  const exceedsLimit = Math.abs(cashDifference) > 10; // Mock limit
+  const selectedMyItem = myItems.find((item) => item.id === selectedItem);
+  const cashDifference = theirItem && selectedMyItem ? (theirItem.price - selectedMyItem.price) : 0;
 
   const handleSubmit = () => {
-    if (!exceedsLimit) {
-      alert("Trade proposal sent!");
-      navigate("/profile");
+    if (theirItem && selectedMyItem) {
+      fetch("/deals/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user1_id: userId,
+          user2_id: theirItem.owner_id,
+          user1_item_id: selectedMyItem.id,
+          user2_item_id: theirItem.id,
+          cash_difference: Math.abs(cashDifference),
+          payer_id: cashDifference > 0 ? userId : theirItem.owner_id,
+          status: "pending"
+        }),
+      })
+        .then((res) => {
+          if (!res.ok) throw new Error("Failed to propose trade");
+          return res.json();
+        })
+        .then(() => navigate("/profile"))
+        .catch((err) => setError(err.message));
     }
   };
+
+  if (loading) return <div>Loading...</div>;
+  if (error) return <div className="text-red-500">{error}</div>;
+  if (!theirItem || myItems.length === 0) return <div>No items found.</div>;
 
   return (
     <div className="max-w-[1100px] mx-auto px-8 py-8">
@@ -46,21 +92,6 @@ export function ProposeTrade() {
       <h1 className="mb-8" style={{ fontSize: '32px', fontWeight: 600, color: '#1A1A1A' }}>
         Propose Trade
       </h1>
-
-      {/* Warning Banner */}
-      {exceedsLimit && (
-        <div className="mb-6 p-4 bg-[#FEF3C7] border border-[#EF9F27] rounded-lg flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-[#EF9F27] flex-shrink-0 mt-0.5" />
-          <div>
-            <p style={{ fontWeight: 600, color: '#1A1A1A' }}>
-              This trade exceeds your cash difference limit.
-            </p>
-            <p className="text-sm text-[#6B6B6B] mt-1">
-              You can still send the proposal, but you may want to adjust your preferences or choose a different item.
-            </p>
-          </div>
-        </div>
-      )}
 
       {/* Side-by-side panels */}
       <div className="grid grid-cols-[1fr_auto_1fr] gap-8 items-center">
@@ -84,18 +115,21 @@ export function ProposeTrade() {
           </select>
 
           {/* Selected Item Card */}
-          <div className="border border-[#E5E5E5] rounded-xl overflow-hidden">
-            <img
-              src={selectedMyItem.image}
-              alt={selectedMyItem.name}
-              className="w-full aspect-[4/3] object-cover"
-            />
-            <div className="p-4">
-              <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#1A1A1A' }}>
-                {selectedMyItem.name}
-              </h3>
+          {selectedMyItem && (
+            <div className="border border-[#E5E5E5] rounded-xl overflow-hidden">
+              <ImageWithFallback
+                src={selectedMyItem.image_urls?.[0] || FALLBACK_IMAGE}
+                alt={selectedMyItem.name}
+                className="w-full aspect-[4/3] object-cover"
+              />
+              <div className="p-4">
+                <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#1A1A1A' }}>
+                  {selectedMyItem.name}
+                </h3>
+                <div>Price: ${selectedMyItem.price}</div>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Center: Swap Icon + Cash Difference */}
@@ -104,28 +138,12 @@ export function ProposeTrade() {
             <ArrowRightLeft className="w-8 h-8 text-white" />
           </div>
           <div className="text-center">
-            {cashDifference > 0 ? (
-              <div>
-                <p className="text-[#6B6B6B] text-sm">You pay</p>
-                <p className="text-[#534AB7]" style={{ fontSize: '24px', fontWeight: 600 }}>
-                  ${Math.abs(cashDifference).toFixed(2)}
-                </p>
-              </div>
-            ) : cashDifference < 0 ? (
-              <div>
-                <p className="text-[#6B6B6B] text-sm">They pay you</p>
-                <p className="text-[#1D9E75]" style={{ fontSize: '24px', fontWeight: 600 }}>
-                  ${Math.abs(cashDifference).toFixed(2)}
-                </p>
-              </div>
-            ) : (
-              <div>
-                <p className="text-[#6B6B6B] text-sm">Even trade</p>
-                <p className="text-[#1A1A1A]" style={{ fontSize: '24px', fontWeight: 600 }}>
-                  $0.00
-                </p>
-              </div>
-            )}
+            <div>
+              <p className="text-[#6B6B6B] text-sm">Cash difference</p>
+              <p className="text-[#534AB7]" style={{ fontSize: '24px', fontWeight: 600 }}>
+                ${Math.abs(cashDifference).toFixed(2)}
+              </p>
+            </div>
           </div>
         </div>
 
@@ -137,8 +155,8 @@ export function ProposeTrade() {
 
           {/* Their Item Card */}
           <div className="border border-[#E5E5E5] rounded-xl overflow-hidden">
-            <img
-              src={theirItem.image}
+            <ImageWithFallback
+              src={theirItem.image_urls?.[0] || FALLBACK_IMAGE}
               alt={theirItem.name}
               className="w-full aspect-[4/3] object-cover"
             />
@@ -146,6 +164,7 @@ export function ProposeTrade() {
               <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#1A1A1A' }}>
                 {theirItem.name}
               </h3>
+              <div>Price: ${theirItem.price}</div>
             </div>
           </div>
         </div>

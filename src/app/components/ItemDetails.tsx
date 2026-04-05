@@ -1,33 +1,54 @@
 import { useParams, Link } from "react-router";
 import { ArrowLeft } from "lucide-react";
+import { useState, useEffect } from "react";
+import { ImageWithFallback } from "./figma/ImageWithFallback";
+
+const FALLBACK_IMAGE = "https://via.placeholder.com/800x600?text=No+Image";
 
 export function ItemDetails() {
   const { id } = useParams();
+  const [item, setItem] = useState<any>(null);
+  const [owner, setOwner] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  // Mock data
-  const item = {
-    id,
-    name: "Calculus Textbook",
-    condition: "Good",
-    owner: {
-      name: "Sarah Chen",
-      university: "State University",
-      avatar: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100",
-    },
-    mainImage: "https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=800",
-    thumbnails: [
-      "https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=200",
-      "https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?w=200",
-      "https://images.unsplash.com/photo-1507842217343-583bb7270b66?w=200",
-    ],
-    lookingFor: ["iClicker", "Dining Dollars", "Mini Fridge", "Bike Lock"],
-  };
+  useEffect(() => {
+    setLoading(true);
+    fetch(`/items/${id}`)
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to fetch item");
+        return res.json();
+      })
+      .then((data) => {
+        setItem(data);
+        if (data.owner_id) {
+          fetch(`/users/${data.owner_id}`)
+            .then((res) => {
+              if (!res.ok) throw new Error("Failed to fetch owner");
+              return res.json();
+            })
+            .then((userData) => setOwner(userData))
+            .catch(() => setOwner(null))
+            .finally(() => setLoading(false));
+        } else {
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        setError(err.message);
+        setLoading(false);
+      });
+  }, [id]);
 
   const conditionColors = {
-    Good: "bg-[#1D9E75] text-white",
-    Fair: "bg-[#EF9F27] text-white",
-    Poor: "bg-[#E24B4A] text-white",
+    good: "bg-[#1D9E75] text-white",
+    fair: "bg-[#EF9F27] text-white",
+    poor: "bg-[#E24B4A] text-white",
   };
+
+  if (loading) return <div>Loading...</div>;
+  if (error) return <div className="text-red-500">{error}</div>;
+  if (!item) return <div>No item found.</div>;
 
   return (
     <div className="max-w-[1100px] mx-auto px-8 py-8">
@@ -42,28 +63,14 @@ export function ItemDetails() {
 
       {/* Two-column layout */}
       <div className="grid grid-cols-[55%_45%] gap-8">
-        {/* Left: Images */}
+        {/* Left: Image */}
         <div>
           <div className="bg-white rounded-xl overflow-hidden mb-4">
-            <img
-              src={item.mainImage}
+            <ImageWithFallback
+              src={item.image_urls?.[0] || FALLBACK_IMAGE}
               alt={item.name}
               className="w-full aspect-[4/3] object-cover"
             />
-          </div>
-          <div className="flex gap-4">
-            {item.thumbnails.map((thumb, idx) => (
-              <button
-                key={idx}
-                className="flex-1 bg-white rounded-lg overflow-hidden hover:opacity-75 transition-opacity"
-              >
-                <img
-                  src={thumb}
-                  alt={`Thumbnail ${idx + 1}`}
-                  className="w-full aspect-square object-cover"
-                />
-              </button>
-            ))}
           </div>
         </div>
 
@@ -84,40 +91,30 @@ export function ItemDetails() {
             </span>
           </div>
 
-          {/* Owner Info */}
+          {/* Show category and price if available */}
           <div className="bg-white rounded-xl p-6">
-            <div className="flex items-center gap-4">
-              <img
-                src={item.owner.avatar}
-                alt={item.owner.name}
-                className="w-16 h-16 rounded-full object-cover"
-              />
-              <div>
-                <h3 style={{ fontSize: '18px', fontWeight: 600, color: '#1A1A1A' }}>
-                  {item.owner.name}
-                </h3>
-                <p className="text-[#6B6B6B]">{item.owner.university}</p>
-              </div>
-            </div>
+            <div className="mb-2"><b>Category:</b> {item.category}</div>
+            <div><b>Price:</b> ${item.price}</div>
           </div>
 
-          {/* Looking For */}
-          <div className="bg-white rounded-xl p-6">
-            <h3 className="mb-4" style={{ fontSize: '18px', fontWeight: 600, color: '#1A1A1A' }}>
-              I'm looking for
-            </h3>
-            <div className="flex flex-wrap gap-2">
-              {item.lookingFor.map((tag) => (
-                <span
-                  key={tag}
-                  className="px-4 py-2 bg-[#F3F4F6] text-[#1A1A1A] rounded-full"
-                  style={{ borderRadius: "20px" }}
-                >
-                  {tag}
-                </span>
-              ))}
+          {/* Owner Info */}
+          {owner && (
+            <div className="bg-white rounded-xl p-6">
+              <div className="mb-2"><b>Owner:</b> {owner.name} ({owner.email})</div>
+              {owner.looking_for_categories && owner.looking_for_categories.length > 0 && (
+                <div>
+                  <b>Looking for categories:</b>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {owner.looking_for_categories.map((cat: string) => (
+                      <span key={cat} className="px-3 py-1 bg-[#F3F4F6] rounded-full text-[#1A1A1A]">
+                        {cat}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
+          )}
 
           {/* Propose Trade Button */}
           <Link
