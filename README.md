@@ -1,8 +1,12 @@
-# diamondhacks2026
+# SwapU
 
 ## Overview
 
-TradeSwap is a platform for negotiating and executing hardware trades. It consists of a React unified frontend leveraging Vite and shadcn/ui and a FastAPI backend powered by Supabase PostgreSQL.
+The spark for SwapU came from the "campus graveyard" of unused student gear. We realized that university life is full of inefficiencies; students are constantly sitting on assets like iClickers, lab equipment, or textbooks that they no longer need, while others are continually searching through forums and marketplace discords to find those exact items.
+
+Traditional marketplaces are too slow for the fast-paced student schedule. We wanted to take the thrill and fairness of trading and apply it to campus essentials, removing the awkwardness of manual haggling and replacing it with an intelligent, autonomous system.
+
+Under the hood, SwapU is a platform for negotiating and executing these trades. It consists of a React unified frontend leveraging Vite and shadcn/ui, and a FastAPI backend powered by Supabase PostgreSQL.
 
 ## Features
 - **Guest Accounts**: Switch between users using the guest account selector on the Profile page.
@@ -63,9 +67,27 @@ AWS_SECRET_ACCESS_KEY=your_secret_key # Or SECRET_ACCESS_KEY
 - **AWS S3** - Image Storage
 
 ## Project Structure
-- `src/app/` - React frontend application and components
-- `src/controller/` - FastAPI REST and WebSocket routes
-- `src/service/` - Backend business logic
-- `src/agents/` - AI negotiation logic and OpenAi integration
-- `src/database/` - Supabase client setup
-- `src/doc/` - API documentation
+
+```text
+diamondhacks2026/
+├── src/
+│   ├── agents/          # AI negotiation logic and BrowserUse integration for determining prices
+│   ├── app/             # React frontend root
+│   │   ├── components/  # React UI components and pages
+│   │   ├── contexts/    # React context providers
+│   │   └── ...          # React routing and root files
+│   ├── controller/      # FastAPI REST and WebSocket controllers/routes
+│   ├── core/            # Application exceptions and core logic
+│   ├── database/        # Supabase client setup and configuration
+│   ├── doc/             # API documentation
+│   ├── scripts/         # DB seeders and utility scripts
+│   ├── service/         # Backend business logic and DB interactions
+│   ├── styles/          # Tailwind and global CSS
+│   ├── test/            # Backend automated test suite
+│   ├── websocket/       # WebSocket logic implementations
+│   ├── app.py           # FastAPI entry point
+│   └── main.tsx         # React entry point
+├── package.json         # Frontend dependencies
+├── requirements.txt     # Python backend dependencies
+└── vite.config.ts       # Vite and frontend proxy configuration
+```
