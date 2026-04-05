@@ -4,7 +4,7 @@ from typing import Optional
 from database.supabase_client import get_supabase_client
 
 from dotenv import load_dotenv
-from supabase import create_client, Client
+from supabase import Client
 
 load_dotenv()
 
@@ -20,20 +20,17 @@ class UserService:
     # ------------------------------------------------------------------
 
     def _get_user_or_raise(self, user_id: str) -> dict:
-        try:
-            response = (
-                self.client.table(USERS_TABLE)
-                .select("*")
-                .eq("id", user_id)
-                .maybe_single()
-                .execute()
-            )
-        except Exception:
+        """Return the user row or raise ValueError if not found."""
+        response = (
+            self.client.table(USERS_TABLE)
+            .select("*")
+            .eq("id", user_id)
+            .limit(1)
+            .execute()
+        )
+        if not response.data:
             raise ValueError(f"User '{user_id}' not found.")
-        
-        if response.data is None:
-            raise ValueError(f"User '{user_id}' not found.")
-        return response.data
+        return response.data[0]
 
     # ------------------------------------------------------------------
     # Public methods
@@ -51,10 +48,10 @@ class UserService:
             self.client.table(USERS_TABLE)
             .select("id")
             .eq("email", email)
-            .maybe_single()
+            .limit(1)
             .execute()
         )
-        if existing.data:
+        if existing and existing.data:
             raise ValueError(f"A user with email '{email}' already exists.")
 
         new_user = {
@@ -67,22 +64,31 @@ class UserService:
         response = self.client.table(USERS_TABLE).insert(new_user).execute()
         return response.data[0]
 
-    def get_user_by_id(self, user_id: str) -> dict:
-        """Fetch a single user by their UUID."""
-        return self._get_user_or_raise(user_id)
+    def get_user_by_id(self, user_id: str) -> Optional[dict]:
+        """Fetch a single user by their UUID. Returns None if not found."""
+        response = (
+            self.client.table(USERS_TABLE)
+            .select("*")
+            .eq("id", user_id)
+            .limit(1)
+            .execute()
+        )
+        if not response.data:
+            return None
+        return response.data[0]
 
-    def get_user_by_email(self, email: str) -> dict:
-        """Fetch a single user by their email address."""
+    def get_user_by_email(self, email: str) -> Optional[dict]:
+        """Fetch a single user by their email. Returns None if not found."""
         response = (
             self.client.table(USERS_TABLE)
             .select("*")
             .eq("email", email)
-            .maybe_single()
+            .limit(1)
             .execute()
         )
-        if response.data is None:
-            raise ValueError(f"No user found with email '{email}'.")
-        return response.data
+        if not response.data:
+            return None
+        return response.data[0]
 
     def update_user(
         self,
@@ -120,7 +126,7 @@ class UserService:
         # 1. Delete messages sent by this user
         self.client.table("messages").delete().eq("sender_id", user_id).execute()
 
-        # 2. Delete deals involving this user, and their chatrooms/messages
+        # 2. Find all deals involving this user
         deals = (
             self.client.table("deals")
             .select("id")
@@ -128,6 +134,7 @@ class UserService:
             .execute()
         )
         deal_ids = [d["id"] for d in deals.data]
+
         for deal_id in deal_ids:
             # Delete chatroom messages first, then the chatroom itself
             chatrooms = (
