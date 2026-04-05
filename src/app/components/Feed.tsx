@@ -1,19 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router";
 import { Search } from "lucide-react";
 import Masonry from "react-responsive-masonry";
-
-// Mock data
-const mockItems = [
-  { id: "1", name: "Calculus Textbook", condition: "Good", category: "textbooks", image: "https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=400" },
-  { id: "2", name: "iClicker 2", condition: "Fair", category: "electronics", image: "https://images.unsplash.com/photo-1550009158-9ebf69173e03?w=400" },
-  { id: "3", name: "Mini Fridge", condition: "Good", category: "dorm essentials", image: "https://images.unsplash.com/photo-1584568694244-14fbdf83bd30?w=400" },
-  { id: "4", name: "Concert Tickets", condition: "Good", category: "tickets", image: "https://images.unsplash.com/photo-1540039155733-5bb30b53aa14?w=400" },
-  { id: "5", name: "Nintendo Switch", condition: "Good", category: "games", image: "https://images.unsplash.com/photo-1578303512597-81e6cc155b3e?w=400" },
-  { id: "6", name: "Desk Lamp", condition: "Fair", category: "dorm essentials", image: "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=400" },
-  { id: "7", name: "Organic Chemistry Notes", condition: "Good", category: "textbooks", image: "https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?w=400" },
-  { id: "8", name: "Bike Lock", condition: "Good", category: "transport", image: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400" },
-];
 
 const categories = [
   "All",
@@ -29,11 +17,35 @@ const categories = [
 export function Feed() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
+  const [items, setItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setLoading(true);
+    fetch("/items/")
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to fetch items");
+        return res.json();
+      })
+      .then((data) => setItems(data))
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filteredItems = items.filter((item) => {
+    const matchesCategory =
+      selectedCategory === "All" ||
+      (item.category && item.category.toLowerCase() === selectedCategory.toLowerCase());
+    const matchesSearch =
+      item.name && item.name.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesCategory && matchesSearch;
+  });
 
   const conditionColors = {
-    Good: "bg-[#1D9E75] text-white",
-    Fair: "bg-[#EF9F27] text-white",
-    Poor: "bg-[#E24B4A] text-white",
+    good: "bg-[#1D9E75] text-white",
+    fair: "bg-[#EF9F27] text-white",
+    poor: "bg-[#E24B4A] text-white",
   };
 
   return (
@@ -51,7 +63,6 @@ export function Feed() {
             className="w-full pl-12 pr-4 py-3 bg-white border border-[#E5E5E5] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#534AB7]"
           />
         </div>
-
         {/* Category Pills */}
         <div className="flex gap-2 overflow-x-auto pb-2">
           {categories.map((category) => (
@@ -70,36 +81,41 @@ export function Feed() {
           ))}
         </div>
       </div>
-
       {/* Masonry Grid */}
-      <Masonry columnsCount={4} gutter="24px">
-        {mockItems.map((item) => (
-          <Link key={item.id} to={`/item/${item.id}`}>
-            <div className="bg-white rounded-xl overflow-hidden hover:shadow-lg transition-shadow cursor-pointer">
-              <div className="aspect-[4/3] overflow-hidden">
-                <img
-                  src={item.image}
-                  alt={item.name}
-                  className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
-                />
+      {loading ? (
+        <div>Loading...</div>
+      ) : error ? (
+        <div className="text-red-500">{error}</div>
+      ) : (
+        <Masonry columnsCount={4} gutter="24px">
+          {filteredItems.map((item) => (
+            <Link key={item.id} to={`/item/${item.id}`}>
+              <div className="bg-white rounded-xl overflow-hidden hover:shadow-lg transition-shadow cursor-pointer">
+                <div className="aspect-[4/3] overflow-hidden">
+                  <img
+                    src={item.image_url}
+                    alt={item.name}
+                    className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
+                  />
+                </div>
+                <div className="p-4">
+                  <h3 className="mb-2" style={{ fontSize: '16px', fontWeight: 500, color: '#1A1A1A' }}>
+                    {item.name}
+                  </h3>
+                  <span
+                    className={`inline-block px-3 py-1 text-sm rounded-full ${
+                      conditionColors[item.condition as keyof typeof conditionColors]
+                    }`}
+                    style={{ borderRadius: "20px" }}
+                  >
+                    {item.condition}
+                  </span>
+                </div>
               </div>
-              <div className="p-4">
-                <h3 className="mb-2" style={{ fontSize: '16px', fontWeight: 500, color: '#1A1A1A' }}>
-                  {item.name}
-                </h3>
-                <span
-                  className={`inline-block px-3 py-1 text-sm rounded-full ${
-                    conditionColors[item.condition as keyof typeof conditionColors]
-                  }`}
-                  style={{ borderRadius: "20px" }}
-                >
-                  {item.condition}
-                </span>
-              </div>
-            </div>
-          </Link>
-        ))}
-      </Masonry>
+            </Link>
+          ))}
+        </Masonry>
+      )}
     </div>
   );
 }

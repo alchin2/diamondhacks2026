@@ -16,7 +16,17 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-
+  server: {
+    proxy: {
+      // Proxy all API requests to FastAPI backend
+      '/items': 'http://localhost:8000',
+      '/deals': 'http://localhost:8000',
+      '/users': 'http://localhost:8000',
+      '/chatrooms': 'http://localhost:8000',
+      '/negotiate': 'http://localhost:8000',
+      '/match': 'http://localhost:8000',
+    },
+  },
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
   assetsInclude: ['**/*.svg', '**/*.csv'],
 })

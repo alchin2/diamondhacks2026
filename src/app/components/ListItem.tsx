@@ -2,11 +2,17 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { Upload, X } from "lucide-react";
 
+// Use real user UUID for owner_id
+const DUMMY_OWNER_ID = "19497467-e10b-4124-a65b-68c3f6b26be7";
+
 export function ListItem() {
   const navigate = useNavigate();
   const [itemName, setItemName] = useState("");
   const [condition, setCondition] = useState<"Good" | "Fair" | "Poor">("Good");
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imageUrl, setImageUrl] = useState<string | null>(null); // For API
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -14,14 +20,37 @@ export function ListItem() {
       const reader = new FileReader();
       reader.onload = () => setImagePreview(reader.result as string);
       reader.readAsDataURL(file);
+      // In production, upload to storage and setImageUrl to the uploaded URL
+      setImageUrl("https://via.placeholder.com/400"); // Dummy URL
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Mock submission
-    alert("Item listed successfully!");
-    navigate("/profile");
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/items/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          owner_id: DUMMY_OWNER_ID,
+          name: itemName,
+          category: "miscellaneous",
+          condition: condition.toLowerCase(),
+          price: 1, // Dummy price, required by API
+          confidence_score: null,
+          image_url: imageUrl,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to list item");
+      alert("Item listed successfully!");
+      navigate("/profile");
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -109,13 +138,17 @@ export function ListItem() {
             Our system will automatically categorize your item and estimate its value.
           </p>
 
+          {/* Error Message */}
+          {error && <div className="text-red-500">{error}</div>}
+
           {/* Submit Button */}
           <button
             type="submit"
             className="w-full py-4 bg-[#534AB7] text-white rounded-lg hover:bg-[#453CA0] transition-colors"
             style={{ fontSize: '18px', fontWeight: 600 }}
+            disabled={loading}
           >
-            List Item
+            {loading ? "Listing..." : "List Item"}
           </button>
         </form>
       </div>
