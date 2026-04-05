@@ -14,13 +14,22 @@ interface Item {
 const FALLBACK_IMAGE = "https://via.placeholder.com/400?text=No+Image";
 
 export function MyItems() {
-  // Use real user UUID
-  const userId = "19497467-e10b-4124-a65b-68c3f6b26be7";
+  const [userId, setUserId] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("guest_user_id");
+    }
+    return null;
+  });
   const [myItems, setMyItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (!userId) {
+      setLoading(false);
+      setMyItems([]);
+      return;
+    }
     setLoading(true);
     fetch("/items/")
       .then((res) => {
@@ -32,6 +41,15 @@ export function MyItems() {
       .finally(() => setLoading(false));
   }, [userId]);
 
+  useEffect(() => {
+    const onGuestChange = () => {
+      setUserId(localStorage.getItem("guest_user_id"));
+    };
+
+    window.addEventListener("guest_user_changed", onGuestChange);
+    return () => window.removeEventListener("guest_user_changed", onGuestChange);
+  }, []);
+
   const conditionColors = {
     good: "bg-[#1D9E75] text-white",
     fair: "bg-[#EF9F27] text-white",
@@ -40,6 +58,7 @@ export function MyItems() {
 
   if (loading) return <div>Loading...</div>;
   if (error) return <div className="text-red-500">{error}</div>;
+  if (!userId) return <div className="text-center py-16 text-[#6B6B6B]">Please select a guest account to view your items.</div>;
 
   return (
     <div className="max-w-[1100px] mx-auto px-8 py-8">

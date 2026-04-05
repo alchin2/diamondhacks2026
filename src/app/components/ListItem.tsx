@@ -49,10 +49,13 @@ export function ListItem() {
     });
 
     if (!presignResponse.ok) {
+      console.error("Presign response failed:", await presignResponse.text());
       throw new Error("Failed to prepare image upload");
     }
 
     const uploadData: UploadResponse = await presignResponse.json();
+    console.log("Presigned upload URL and data:", uploadData);
+
     const uploadResponse = await fetch(uploadData.upload_url, {
       method: uploadData.method,
       headers: uploadData.headers,
@@ -60,9 +63,11 @@ export function ListItem() {
     });
 
     if (!uploadResponse.ok) {
-      throw new Error("Failed to upload image");
+      console.error("S3 Upload failed:", uploadResponse.status, await uploadResponse.text());
+      throw new Error(`Failed to upload image directly to S3 (status ${uploadResponse.status})`);
     }
 
+    console.log("S3 Upload successful! File available at:", uploadData.file_url);
     return uploadData.file_url;
   };
 
