@@ -1,5 +1,7 @@
 import logging
-from database.supabase_client import get_supabase_client
+
+from core.exceptions import NotFoundError, ValidationError
+from service.base import SupabaseService
 
 logger = logging.getLogger(__name__)
 
@@ -8,15 +10,7 @@ ACTIVE_STATUSES = ("pending", "negotiating", "accepted")
 CONDITION_RANK = {"like_new": 4, "good": 3, "fair": 2, "poor": 1}
 
 
-class MatchingService:
-    def __init__(self):
-        self._client = None
-
-    @property
-    def client(self):
-        if self._client is None:
-            self._client = get_supabase_client()
-        return self._client
+class MatchingService(SupabaseService):
 
     def find_matches(
         self,
@@ -37,6 +31,9 @@ class MatchingService:
             condition: Minimum condition filter (good/fair/poor/like_new).
             limit: Max results to return.
         """
+        user_id = self.require_identifier(user_id, "user_id")
+        if not item_ids:
+            raise ValidationError("item_ids must contain at least one item.")
         logger.info("Finding matches for user=%s offering %d items", user_id[:8], len(item_ids))
 
         # 1. Fetch the user's cash constraints
@@ -48,9 +45,9 @@ class MatchingService:
             .execute()
         ).data
         if not user:
-            raise ValueError(f"User {user_id} not found")
-        max_cash_amt = float(user["max_cash_amt"])
-        max_cash_pct = float(user["max_cash_pct"]) / 100.0  # stored as percentage
+            raise NotFoundError(f"User '{user_id}' not found.")
+        max_cash_amt = float(user.get("max_cash_amt") or 0)
+        max_cash_pct = float(user.get("max_cash_pct") or 0) / 100.0
 
         # 2. Fetch the user's offered items
         my_items = (
@@ -61,12 +58,10 @@ class MatchingService:
             .execute()
         ).data
         if not my_items:
-            raise ValueError("No valid items found for this user")
+            raise ValidationError("No valid offered items were found for this user.")
         logger.info("Offering items: %s", [(i["name"], i["category"], i["price"]) for i in my_items])
 
         my_categories = {i["category"] for i in my_items}
-        my_best_price = max(float(i["price"]) for i in my_items)
-
         # 3. Fetch what I want (user_categories)
         my_cats_rows = (
             self.client.table("user_categories")

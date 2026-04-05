@@ -1,23 +1,17 @@
 import logging
 
-from database.supabase_client import get_supabase_client
+from core.exceptions import ExternalServiceError, NotFoundError, ValidationError
 from agents.negotiation_runner import run_negotiation, UserContext
+from service.base import SupabaseService
 
 logger = logging.getLogger(__name__)
 
 
-class NegotiationService:
-    def __init__(self):
-        self._client = None
-
-    @property
-    def client(self):
-        if self._client is None:
-            self._client = get_supabase_client()
-        return self._client
+class NegotiationService(SupabaseService):
 
     def start_negotiation(self, deal_id: str) -> dict:
         """Kick off agent negotiation for a deal."""
+        deal_id = self.require_identifier(deal_id, "deal_id")
         logger.info("Starting negotiation for deal_id=%s", deal_id)
 
         # 1. Fetch the deal
@@ -25,31 +19,33 @@ class NegotiationService:
             self.client.table("deals")
             .select("id, user1_id, user2_id, user1_item_id, user2_item_id, cash_difference, payer_id, status")
             .eq("id", deal_id)
-            .single()
+            .limit(1)
             .execute()
         )
         if not deal.data:
             logger.error("Deal %s not found", deal_id)
-            raise ValueError(f"Deal {deal_id} not found")
+            raise NotFoundError(f"Deal '{deal_id}' not found.")
+
+        deal_row = deal.data[0]
 
         logger.info("Deal fetched: status=%s, user1=%s, user2=%s",
-                    deal.data['status'], deal.data['user1_id'][:8], deal.data['user2_id'][:8])
+                    deal_row['status'], deal_row['user1_id'][:8], deal_row['user2_id'][:8])
 
-        if deal.data["status"] not in ("pending", "negotiating"):
-            raise ValueError(f"Deal is already {deal.data['status']}, cannot negotiate")
+        if deal_row["status"] not in ("pending", "negotiating"):
+            raise ValidationError(f"Deal is already '{deal_row['status']}' and cannot be negotiated.")
 
         # 2. Fetch both users
         user1 = (
             self.client.table("users")
             .select("id, name, max_cash_amt, max_cash_pct")
-            .eq("id", deal.data["user1_id"])
+            .eq("id", deal_row["user1_id"])
             .single()
             .execute()
         ).data
         user2 = (
             self.client.table("users")
             .select("id, name, max_cash_amt, max_cash_pct")
-            .eq("id", deal.data["user2_id"])
+            .eq("id", deal_row["user2_id"])
             .single()
             .execute()
         ).data
@@ -58,38 +54,43 @@ class NegotiationService:
         item1 = (
             self.client.table("items")
             .select("id, name, price")
-            .eq("id", deal.data["user1_item_id"])
+            .eq("id", deal_row["user1_item_id"])
             .single()
             .execute()
         ).data
         item2 = (
             self.client.table("items")
             .select("id, name, price")
-            .eq("id", deal.data["user2_item_id"])
+            .eq("id", deal_row["user2_item_id"])
             .single()
             .execute()
         ).data
+
+        if not user1 or not user2:
+            raise NotFoundError("One or more users on the deal no longer exist.")
+        if not item1 or not item2:
+            raise NotFoundError("One or more items on the deal no longer exist.")
 
         # 4. Build user contexts
         ctx1 = UserContext(
             user_id=user1["id"],
             item_price=float(item1["price"]),
-            max_cash_amt=float(user1["max_cash_amt"]),
-            max_cash_pct=float(user1["max_cash_pct"]),
+            max_cash_amt=float(user1.get("max_cash_amt") or 0),
+            max_cash_pct=float(user1.get("max_cash_pct") or 0),
         )
         ctx2 = UserContext(
             user_id=user2["id"],
             item_price=float(item2["price"]),
-            max_cash_amt=float(user2["max_cash_amt"]),
-            max_cash_pct=float(user2["max_cash_pct"]),
+            max_cash_amt=float(user2.get("max_cash_amt") or 0),
+            max_cash_pct=float(user2.get("max_cash_pct") or 0),
         )
 
         # 5. Run the negotiation
-        outcome = run_negotiation(
-            deal_id=deal_id,
-            user1=ctx1,
-            user2=ctx2,
-        )
+        try:
+            outcome = run_negotiation(deal_id=deal_id, user1=ctx1, user2=ctx2)
+        except Exception as exc:
+            logger.exception("Negotiation runner failed for deal %s", deal_id, exc_info=exc)
+            raise ExternalServiceError("Negotiation provider failed to produce a result.") from exc
 
         # 6. Log negotiation steps to neg_logs
         logger.info("Writing %d log entries to neg_logs for deal %s", len(outcome["logs"]), deal_id)
@@ -149,7 +150,7 @@ class NegotiationService:
         """User confirms the negotiated deal."""
         deal = self._get_deal(deal_id)
         if deal["status"] != "negotiating":
-            raise ValueError(f"Deal is '{deal['status']}', must be 'negotiating' to confirm")
+            raise ValidationError(f"Deal is '{deal['status']}', must be 'negotiating' to confirm.")
 
         self.client.table("deals").update({
             "status": "accepted",
@@ -161,7 +162,7 @@ class NegotiationService:
         """User declines the negotiated deal."""
         deal = self._get_deal(deal_id)
         if deal["status"] != "negotiating":
-            raise ValueError(f"Deal is '{deal['status']}', must be 'negotiating' to decline")
+            raise ValidationError(f"Deal is '{deal['status']}', must be 'negotiating' to decline.")
 
         self.client.table("deals").update({
             "status": "declined",
@@ -171,9 +172,11 @@ class NegotiationService:
 
     def counter_negotiation(self, deal_id: str, cash_difference: float, payer_id: str) -> dict:
         """User counters with new terms and re-runs negotiation."""
+        if cash_difference < 0:
+            raise ValidationError("cash_difference must be greater than or equal to zero.")
         deal = self._get_deal(deal_id)
         if deal["status"] != "negotiating":
-            raise ValueError(f"Deal is '{deal['status']}', must be 'negotiating' to counter")
+            raise ValidationError(f"Deal is '{deal['status']}', must be 'negotiating' to counter.")
 
         # Update deal with user's counter values, reset to pending
         self.client.table("deals").update({
@@ -189,16 +192,17 @@ class NegotiationService:
 
     def _get_deal(self, deal_id: str) -> dict:
         """Fetch a deal by ID."""
+        deal_id = self.require_identifier(deal_id, "deal_id")
         deal = (
             self.client.table("deals")
             .select("id, user1_id, user2_id, user1_item_id, user2_item_id, cash_difference, payer_id, status")
             .eq("id", deal_id)
-            .single()
+            .limit(1)
             .execute()
         )
         if not deal.data:
-            raise ValueError(f"Deal {deal_id} not found")
-        return deal.data
+            raise NotFoundError(f"Deal '{deal_id}' not found.")
+        return deal.data[0]
 
     def get_negotiation_logs(self, deal_id: str) -> list:
         """Get all negotiation logs for a deal."""

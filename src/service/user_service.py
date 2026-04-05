@@ -1,114 +1,138 @@
-import os
 import uuid
 from typing import Optional
 
-from dotenv import load_dotenv
-from supabase import create_client, Client
-
-load_dotenv()
+from core.exceptions import ConflictError, NotFoundError, ValidationError
+from service.base import SupabaseService
 
 USERS_TABLE = "users"
 
-class UserService:
-    def __init__(self):
-        url: str = os.environ["SUPABASE_URL"]
-        key: str = os.environ["SUPABASE_KEY"]
-        self.client: Client = create_client(url, key)
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
+class UserService(SupabaseService):
+    def _validate_cash_preferences(
+        self,
+        max_cash_amt: Optional[float],
+        max_cash_pct: Optional[float],
+    ) -> None:
+        if max_cash_amt is not None and max_cash_amt < 0:
+            raise ValidationError("max_cash_amt must be greater than or equal to zero.")
+        if max_cash_pct is not None and not 0 <= max_cash_pct <= 100:
+            raise ValidationError("max_cash_pct must be between 0 and 100.")
 
     def _get_user_or_raise(self, user_id: str) -> dict:
-        """Return the user row or raise ValueError if not found."""
+        user_id = self.require_identifier(user_id, "user_id")
         response = (
             self.client.table(USERS_TABLE)
             .select("*")
             .eq("id", user_id)
-            .maybe_single()
+            .limit(1)
             .execute()
         )
-        if response.data is None:
-            raise ValueError(f"User '{user_id}' not found.")
-        return response.data
-
-    # ------------------------------------------------------------------
-    # Public methods
-    # ------------------------------------------------------------------
+        return self.first_or_raise(response, f"User '{user_id}' not found.")
 
     def create_user(
         self,
         email: str,
-        display_name: str,
-        avatar_url: Optional[str] = None,
+        name: str,
+        max_cash_amt: Optional[float] = None,
+        max_cash_pct: Optional[float] = None,
     ) -> dict:
-        """Create a new user. Raises ValueError if the email is already taken."""
+        """Create a new user."""
+        normalized_email = self.require_identifier(email, "email").lower()
+        normalized_name = self.require_identifier(name, "name")
+        self._validate_cash_preferences(max_cash_amt, max_cash_pct)
+
         existing = (
             self.client.table(USERS_TABLE)
             .select("id")
-            .eq("email", email)
-            .maybe_single()
+            .eq("email", normalized_email)
+            .limit(1)
             .execute()
         )
         if existing.data:
-            raise ValueError(f"A user with email '{email}' already exists.")
+            raise ConflictError(f"A user with email '{normalized_email}' already exists.")
 
         new_user = {
             "id": str(uuid.uuid4()),
-            "email": email,
-            "display_name": display_name,
-            "avatar_url": avatar_url,
+            "email": normalized_email,
+            "name": normalized_name,
+            "max_cash_amt": max_cash_amt,
+            "max_cash_pct": max_cash_pct,
         }
         response = self.client.table(USERS_TABLE).insert(new_user).execute()
         return response.data[0]
 
     def get_user_by_id(self, user_id: str) -> dict:
-        """Fetch a single user by their UUID."""
+        """Fetch a single user by UUID."""
         return self._get_user_or_raise(user_id)
 
     def get_user_by_email(self, email: str) -> dict:
-        """Fetch a single user by their email address."""
+        """Fetch a single user by email."""
+        normalized_email = self.require_identifier(email, "email").lower()
         response = (
             self.client.table(USERS_TABLE)
             .select("*")
-            .eq("email", email)
-            .maybe_single()
+            .eq("email", normalized_email)
+            .limit(1)
             .execute()
         )
-        if response.data is None:
-            raise ValueError(f"No user found with email '{email}'.")
-        return response.data
+        return self.first_or_raise(response, f"No user found with email '{normalized_email}'.")
 
     def update_user(
         self,
         user_id: str,
-        display_name: Optional[str] = None,
-        avatar_url: Optional[str] = None,
+        name: Optional[str] = None,
+        max_cash_amt: Optional[float] = None,
+        max_cash_pct: Optional[float] = None,
     ) -> dict:
         """Update mutable fields on an existing user."""
-        # Ensure the user exists before attempting an update.
+        user_id = self.require_identifier(user_id, "user_id")
         self._get_user_or_raise(user_id)
+        self._validate_cash_preferences(max_cash_amt, max_cash_pct)
 
         updates: dict = {}
-        if display_name is not None:
-            updates["display_name"] = display_name
-        if avatar_url is not None:
-            updates["avatar_url"] = avatar_url
+        if name is not None:
+            updates["name"] = self.require_identifier(name, "name")
+        if max_cash_amt is not None:
+            updates["max_cash_amt"] = max_cash_amt
+        if max_cash_pct is not None:
+            updates["max_cash_pct"] = max_cash_pct
 
         if not updates:
-            # Nothing to change — just return the current record.
             return self._get_user_or_raise(user_id)
 
-        response = (
-            self.client.table(USERS_TABLE)
-            .update(updates)
-            .eq("id", user_id)
-            .execute()
-        )
+        response = self.client.table(USERS_TABLE).update(updates).eq("id", user_id).execute()
         return response.data[0]
 
     def delete_user(self, user_id: str) -> dict:
-        """Delete a user. Raises ValueError if the user does not exist."""
+        """Delete a user and associated records across dependent tables."""
+        user_id = self.require_identifier(user_id, "user_id")
         self._get_user_or_raise(user_id)
+
+        self.client.table("messages").delete().eq("sender_id", user_id).execute()
+
+        deals = (
+            self.client.table("deals")
+            .select("id")
+            .or_(f"user1_id.eq.{user_id},user2_id.eq.{user_id}")
+            .execute()
+        )
+        deal_ids = [deal["id"] for deal in deals.data or []]
+
+        for deal_id in deal_ids:
+            chatrooms = (
+                self.client.table("chatrooms")
+                .select("id")
+                .eq("deal_id", deal_id)
+                .execute()
+            )
+            for chatroom in chatrooms.data or []:
+                self.client.table("messages").delete().eq("chatroom_id", chatroom["id"]).execute()
+            self.client.table("chatrooms").delete().eq("deal_id", deal_id).execute()
+
+        if deal_ids:
+            self.client.table("deals").delete().in_("id", deal_ids).execute()
+
+        self.client.table("items").delete().eq("owner_id", user_id).execute()
+        self.client.table("user_categories").delete().eq("user_id", user_id).execute()
         self.client.table(USERS_TABLE).delete().eq("id", user_id).execute()
+
         return {"message": f"User '{user_id}' deleted successfully."}

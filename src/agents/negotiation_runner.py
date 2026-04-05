@@ -18,7 +18,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 ASI1_BASE = "https://api.asi1.ai/v1"
-ASI1_KEY = os.getenv("FETCH")
+ASI1_KEY = os.getenv("ASI1_API_KEY") or os.getenv("FETCH")
 MAX_ROUNDS = 6
 
 RESPONSE_FORMAT = {
@@ -89,6 +89,8 @@ def _build_system_prompt(user: UserContext, opponent: UserContext, role: str) ->
 
 def _call_asi1(messages: list) -> dict:
     """Call ASI1 chat completions API and return parsed JSON move."""
+    if not ASI1_KEY:
+        raise RuntimeError("ASI1_API_KEY is not configured.")
     headers = {
         "Authorization": f"Bearer {ASI1_KEY}",
         "Content-Type": "application/json",

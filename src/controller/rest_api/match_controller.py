@@ -1,10 +1,11 @@
-from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, Query
+from pydantic import BaseModel, Field
+
 from service.matching_service import MatchingService
 
 
 class MatchRequest(BaseModel):
-    item_ids: list[str]
+    item_ids: list[str] = Field(min_length=1)
     category: str | None = None
     name: str | None = None
     condition: str | None = None
@@ -23,16 +24,13 @@ def create_match_routes() -> APIRouter:
         - name: partial text search on item name
         - condition: minimum condition (like_new, good, fair, poor)
         """
-        try:
-            return service.find_matches(
-                user_id=user_id,
-                item_ids=request.item_ids,
-                category=request.category,
-                name=request.name,
-                condition=request.condition,
-                limit=limit,
-            )
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+        return service.find_matches(
+            user_id=user_id,
+            item_ids=request.item_ids,
+            category=request.category,
+            name=request.name,
+            condition=request.condition,
+            limit=limit,
+        )
 
     return router

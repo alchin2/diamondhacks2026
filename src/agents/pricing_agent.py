@@ -1,9 +1,13 @@
 import logging
 from typing import Literal
-from pydantic import BaseModel, ValidationError
-from browser_use_sdk.v3 import AsyncBrowserUse
+from pydantic import BaseModel
+
+try:
+    from browser_use_sdk.v3 import AsyncBrowserUse
+except ImportError:  # pragma: no cover - optional dependency in local dev
+    AsyncBrowserUse = None
+
 from service.items_service import ItemService
-import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +25,7 @@ class PricingResult(BaseModel):
 
 class PricingAgent:
     def __init__(self):
-        self.client = AsyncBrowserUse()
+        self.client = AsyncBrowserUse() if AsyncBrowserUse else None
         self.item_service = ItemService()
         self.allowed_categories = [
             'textbooks', 'iclicker', 'lab_supplies', 'dining_dollars',
@@ -37,39 +41,45 @@ class PricingAgent:
         Implements fallback for reliability (no timeout).
         """
         logger.info(f"Starting pricing agent for item: {item_name} (ID: {item_id}, Condition: {item_condition})")
-        
-        task_prompt = f"""
-        Search for the item '{item_name}' across multiple platforms including eBay, Facebook Marketplace, Craigslist, and Amazon.
-        First, determine the average price of this item based on the listings you find for items in similar condition (Condition/Quality: '{item_condition}'). We will call this the average_price.
-        Second, find the price of a BRAND NEW version of this exact same item. This is the new_price.
-        You MUST categorize the item into ONE of these categories (no exceptions, do not invent new categories): textbooks, iclicker, lab_supplies, dining_dollars, electronics, dorm_essentials, clothing, trading_cards, games, instruments, art_supplies, sports_equipment, transport, tickets, other.
-        Provide a confidence_score between 0.0 and 1.0 based on how consistently you found this item and its price across these platforms.
-        
-        CRITICAL: Your final output MUST be exactly in valid JSON format like this, with NO backticks or markdown or text outside it:
-        {{"average_price": 12.50, "new_price": 25.00, "category": "electronics", "confidence_score": 0.85}}
-        """
-        
-        import json
-        pricing_data = None
-        result = None
-        try:
-            result = await self.client.run(
-                task=task_prompt,
-                model="bu-max"
-            )
-            clean_output = result.output[result.output.find('{'):result.output.rfind('}')+1]
-            pricing_data = json.loads(clean_output)
-            logger.info(f"Successfully parsed JSON output: {pricing_data}")
-        except (Exception, json.JSONDecodeError) as e:
-            logger.error(f"Pricing agent failed: {e}. Using fallback.")
-            # Fallback: use input_price if provided, else 10.0
-            fallback_price = input_price if input_price is not None else 10.0
+
+        if self.client is None:
+            logger.warning("browser_use_sdk is not installed. Falling back to the provided item price.")
             pricing_data = {
-                "average_price": fallback_price,
-                "new_price": fallback_price,
+                "average_price": input_price if input_price is not None else 10.0,
+                "new_price": input_price if input_price is not None else 10.0,
                 "category": "other",
-                "confidence_score": 0.0
+                "confidence_score": 0.0,
             }
+        else:
+            task_prompt = f"""
+            Search for the item '{item_name}' across multiple platforms including eBay, Facebook Marketplace, Craigslist, and Amazon.
+            First, determine the average price of this item based on the listings you find for items in similar condition (Condition/Quality: '{item_condition}'). We will call this the average_price.
+            Second, find the price of a BRAND NEW version of this exact same item. This is the new_price.
+            You MUST categorize the item into ONE of these categories (no exceptions, do not invent new categories): textbooks, iclicker, lab_supplies, dining_dollars, electronics, dorm_essentials, clothing, trading_cards, games, instruments, art_supplies, sports_equipment, transport, tickets, other.
+            Provide a confidence_score between 0.0 and 1.0 based on how consistently you found this item and its price across these platforms.
+
+            CRITICAL: Your final output MUST be exactly in valid JSON format like this, with NO backticks or markdown or text outside it:
+            {{"average_price": 12.50, "new_price": 25.00, "category": "electronics", "confidence_score": 0.85}}
+            """
+
+            import json
+
+            pricing_data = None
+            result = None
+            try:
+                result = await self.client.run(task=task_prompt, model="bu-max")
+                clean_output = result.output[result.output.find('{'):result.output.rfind('}') + 1]
+                pricing_data = json.loads(clean_output)
+                logger.info(f"Successfully parsed JSON output: {pricing_data}")
+            except (Exception, json.JSONDecodeError) as e:
+                logger.error(f"Pricing agent failed: {e}. Using fallback.")
+                fallback_price = input_price if input_price is not None else 10.0
+                pricing_data = {
+                    "average_price": fallback_price,
+                    "new_price": fallback_price,
+                    "category": "other",
+                    "confidence_score": 0.0,
+                }
         # --- Post-processing ---
         predicted_price = float(pricing_data.get("average_price", 0.0))
         new_price = float(pricing_data.get("new_price", predicted_price))
@@ -102,15 +112,15 @@ class PricingAgent:
             logger.info(f"Successfully updated item {item_id} in database with final price {final_price}.")
         except Exception as e:
             logger.error(f"Failed to update item {item_id} in database: {e}")
-        print(f"\n====================================")
-        print(f"🎉 NEW PRICE PREDICTION ADDED TO DB:")
-        print(f"Predicted Price (from condition): ${predicted_price:.2f}")
-        print(f"Brand New Price: ${new_price:.2f}")
-        print(f"Confidence Score: {confidence_score}")
-        print(f"Condition Multiplier: {multiplier} ({item_condition})")
-        print(f"FINAL CALCULATED PRICE: ${final_price:.2f}")
-        print(f"Category: {category}")
-        print(f"====================================\n")
+        logger.info(
+            "Pricing completed for item=%s predicted=%.2f new=%.2f confidence=%.2f final=%.2f category=%s",
+            item_id,
+            predicted_price,
+            new_price,
+            confidence_score,
+            final_price,
+            category,
+        )
 
 # Create a singleton instance to be used across the app
 pricing_agent = PricingAgent()

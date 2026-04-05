@@ -1,73 +1,60 @@
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import Optional
+from fastapi import APIRouter, status
+from pydantic import BaseModel, EmailStr, Field
 
+from typing import Optional
 from service.user_service import UserService
 
 
 class CreateUserRequest(BaseModel):
-    email: str
-    display_name: str
-    avatar_url: Optional[str] = None
+    email: EmailStr
+    name: str = Field(min_length=1, max_length=120)
+    max_cash_amt: Optional[float] = Field(default=None, ge=0)
+    max_cash_pct: Optional[float] = Field(default=None, ge=0, le=100)
 
 
 class UpdateUserRequest(BaseModel):
-    display_name: Optional[str] = None
-    avatar_url: Optional[str] = None
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    max_cash_amt: Optional[float] = Field(default=None, ge=0)
+    max_cash_pct: Optional[float] = Field(default=None, ge=0, le=100)
 
 
 def create_user_routes() -> APIRouter:
     router = APIRouter(prefix="/users", tags=["Users"])
-
     user_service = UserService()
 
-    @router.post("", status_code=201)
+    @router.post("", status_code=status.HTTP_201_CREATED)
     def create_user(request: CreateUserRequest):
         """Register a new user."""
-        try:
-            user = user_service.create_user(
-                email=request.email,
-                display_name=request.display_name,
-                avatar_url=request.avatar_url,
-            )
-            return user
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+        return user_service.create_user(
+            email=str(request.email),
+            name=request.name,
+            max_cash_amt=request.max_cash_amt,
+            max_cash_pct=request.max_cash_pct,
+        )
 
     @router.get("/{user_id}")
     def get_user(user_id: str):
-        """Get a user by their ID."""
-        try:
-            return user_service.get_user_by_id(user_id)
-        except ValueError as e:
-            raise HTTPException(status_code=404, detail=str(e))
+        """Get a user by ID."""
+        return user_service.get_user_by_id(user_id)
 
     @router.get("/email/{email}")
-    def get_user_by_email(email: str):
+    def get_user_by_email(email: EmailStr):
         """Look up a user by email address."""
-        try:
-            return user_service.get_user_by_email(email)
-        except ValueError as e:
-            raise HTTPException(status_code=404, detail=str(e))
+        return user_service.get_user_by_email(str(email))
 
     @router.patch("/{user_id}")
     def update_user(user_id: str, request: UpdateUserRequest):
-        """Update a user's display name or avatar."""
-        try:
-            return user_service.update_user(
-                user_id=user_id,
-                display_name=request.display_name,
-                avatar_url=request.avatar_url,
-            )
-        except ValueError as e:
-            raise HTTPException(status_code=404, detail=str(e))
+        """Update a user's profile or cash trade limits."""
+        return user_service.update_user(
+            user_id=user_id,
+            name=request.name,
+            max_cash_amt=request.max_cash_amt,
+            max_cash_pct=request.max_cash_pct,
+        )
 
     @router.delete("/{user_id}")
     def delete_user(user_id: str):
-        """Delete a user account."""
-        try:
-            return user_service.delete_user(user_id)
-        except ValueError as e:
-            raise HTTPException(status_code=404, detail=str(e))
+        """Delete a user account and all associated records."""
+        return user_service.delete_user(user_id)
 
     return router
