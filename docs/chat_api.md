@@ -205,3 +205,50 @@ uvicorn app:app --reload
 ```
 
 Server starts at `http://localhost:8000`. Open `/docs` for the interactive Swagger UI.
+
+---
+
+## WebSocket — Real-time Chat
+
+### Connect
+
+```
+ws://localhost:8000/ws/chat/{chatroom_id}?user_id={user_id}
+```
+
+The `user_id` must be a participant in the chatroom's deal. The server closes the connection with `4001` if `user_id` is missing, or `4003` if the user is not a participant.
+
+### Send a message
+
+```json
+{"content": "Hey, want to trade?"}
+```
+
+### Receive a message
+
+All connected users in the chatroom receive the saved message:
+
+```json
+{
+  "id": "message-uuid",
+  "chatroom_id": "chatroom-uuid",
+  "sender_id": "user-uuid",
+  "content": "Hey, want to trade?",
+  "created_at": "2026-04-04T12:00:00Z"
+}
+```
+
+### JavaScript example
+
+```js
+const ws = new WebSocket("ws://localhost:8000/ws/chat/CHATROOM_ID?user_id=USER_ID");
+
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  console.log(`${msg.sender_id}: ${msg.content}`);
+};
+
+ws.onopen = () => {
+  ws.send(JSON.stringify({ content: "Hello!" }));
+};
+```
