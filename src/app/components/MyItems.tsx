@@ -1,13 +1,17 @@
 import { Link } from "react-router";
 import { useState, useEffect } from "react";
+import { ImageWithFallback } from "./figma/ImageWithFallback";
 
 interface Item {
   id: string;
+  owner_id: string;
   name: string;
   condition: string;
-  image_url: string | null;
+  image_urls: string[];
   category: string;
 }
+
+const FALLBACK_IMAGE = "https://via.placeholder.com/400?text=No+Image";
 
 export function MyItems() {
   // Use real user UUID
@@ -18,12 +22,12 @@ export function MyItems() {
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/items/?user_id=${userId}`)
+    fetch("/items/")
       .then((res) => {
         if (!res.ok) throw new Error("Failed to fetch items");
         return res.json();
       })
-      .then((data) => setMyItems(data))
+      .then((data) => setMyItems(data.filter((item: Item) => item.owner_id === userId)))
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, [userId]);
@@ -56,8 +60,8 @@ export function MyItems() {
           <Link key={item.id} to={`/item/${item.id}`}>
             <div className="bg-white rounded-xl overflow-hidden hover:shadow-lg transition-shadow cursor-pointer">
               <div className="aspect-square overflow-hidden">
-                <img
-                  src={item.image_url || "https://via.placeholder.com/400"}
+                <ImageWithFallback
+                  src={item.image_urls[0] || FALLBACK_IMAGE}
                   alt={item.name}
                   className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
                 />

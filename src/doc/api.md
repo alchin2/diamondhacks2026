@@ -153,7 +153,9 @@ Base path: `/items`
   "condition": "good",
   "price": 45,
   "confidence_score": 0.82,
-  "image_url": "https://example.com/item.png",
+  "image_urls": [
+    "https://diamondhack-tradingshop.s3.amazonaws.com/items/ti84-front.png"
+  ],
   "created_at": "2026-04-04T18:43:00.000000+00:00"
 }
 ```
@@ -186,7 +188,9 @@ Request body:
   "condition": "good",
   "price": 45,
   "confidence_score": 0.82,
-  "image_url": "https://example.com/item.png"
+  "image_urls": [
+    "https://diamondhack-tradingshop.s3.amazonaws.com/items/ti84-front.png"
+  ]
 }
 ```
 
@@ -200,13 +204,69 @@ Fields:
 | `condition` | string | yes | 1 to 40 characters |
 | `price` | number | yes | Must be `> 0` |
 | `confidence_score` | number or null | no | Between `0` and `1` |
-| `image_url` | string or null | no | Optional URL string |
+| `image_urls` | array of URLs | yes | At least one uploaded image URL is required |
 
 Success response: `201 Created`
 
 Notes:
 
 - After item creation, a background task is scheduled to re-evaluate price and category using the pricing agent.
+- You must upload at least one image before calling `POST /items/`.
+- The API accepts `image_urls` and stores them in the database `image_url` text column as a comma-separated string.
+
+## Uploads
+
+Base path: `/uploads`
+
+Use this endpoint before creating an item when the frontend needs to upload image files to S3.
+
+Recommended flow:
+
+1. Call `POST /uploads/presign` once per image.
+2. Upload the file bytes from the frontend directly to the returned `upload_url` using the returned HTTP method and headers.
+3. Collect each returned `file_url`.
+4. Call `POST /items/` with those URLs in `image_urls`.
+
+### `POST /uploads/presign`
+
+Create a presigned S3 upload URL for an image file.
+
+Request body:
+
+```json
+{
+  "file_name": "ti84-front.png",
+  "content_type": "image/png",
+  "folder": "items"
+}
+```
+
+Fields:
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `file_name` | string | yes | Original file name, must include extension |
+| `content_type` | string | yes | Must be an image MIME type like `image/png` |
+| `folder` | string | no | S3 key prefix, defaults to `items` |
+
+Success response: `200 OK`
+
+Example response:
+
+```json
+{
+  "upload_url": "https://diamondhack-tradingshop.s3.amazonaws.com/items/5b8f2d9d-0b84-4422-9f74-2f5d6e08af95.png?...",
+  "file_url": "https://diamondhack-tradingshop.s3.amazonaws.com/items/5b8f2d9d-0b84-4422-9f74-2f5d6e08af95.png",
+  "object_key": "items/5b8f2d9d-0b84-4422-9f74-2f5d6e08af95.png",
+  "method": "PUT",
+  "headers": {
+    "Content-Type": "image/png"
+  },
+  "expires_in": 900,
+  "bucket": "diamondhack-tradingshop",
+  "region": "us-east-1"
+}
+```
 
 ### `PATCH /items/{item_id}`
 

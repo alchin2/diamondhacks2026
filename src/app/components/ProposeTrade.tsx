@@ -1,12 +1,23 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router";
 import { ArrowLeft, ArrowRightLeft } from "lucide-react";
+import { ImageWithFallback } from "./figma/ImageWithFallback";
+
+const FALLBACK_IMAGE = "https://via.placeholder.com/800x600?text=No+Image";
+
+type TradeItem = {
+  id: string;
+  owner_id: string;
+  name: string;
+  price: number;
+  image_urls?: string[];
+};
 
 export function ProposeTrade() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [theirItem, setTheirItem] = useState<any>(null);
-  const [myItems, setMyItems] = useState<any[]>([]);
+  const [theirItem, setTheirItem] = useState<TradeItem | null>(null);
+  const [myItems, setMyItems] = useState<TradeItem[]>([]);
   const [selectedItem, setSelectedItem] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -21,15 +32,16 @@ export function ProposeTrade() {
         if (!res.ok) throw new Error("Failed to fetch item");
         return res.json();
       }),
-      fetch(`/items/?user_id=${userId}`).then((res) => {
+      fetch("/items/").then((res) => {
         if (!res.ok) throw new Error("Failed to fetch my items");
         return res.json();
       })
     ])
       .then(([itemData, myItemsData]) => {
         setTheirItem(itemData);
-        setMyItems(myItemsData);
-        setSelectedItem(myItemsData[0]?.id || "");
+        const ownedItems = myItemsData.filter((item: TradeItem) => item.owner_id === userId);
+        setMyItems(ownedItems);
+        setSelectedItem(ownedItems[0]?.id || "");
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -105,8 +117,8 @@ export function ProposeTrade() {
           {/* Selected Item Card */}
           {selectedMyItem && (
             <div className="border border-[#E5E5E5] rounded-xl overflow-hidden">
-              <img
-                src={selectedMyItem.image_url}
+              <ImageWithFallback
+                src={selectedMyItem.image_urls?.[0] || FALLBACK_IMAGE}
                 alt={selectedMyItem.name}
                 className="w-full aspect-[4/3] object-cover"
               />
@@ -143,8 +155,8 @@ export function ProposeTrade() {
 
           {/* Their Item Card */}
           <div className="border border-[#E5E5E5] rounded-xl overflow-hidden">
-            <img
-              src={theirItem.image_url}
+            <ImageWithFallback
+              src={theirItem.image_urls?.[0] || FALLBACK_IMAGE}
               alt={theirItem.name}
               className="w-full aspect-[4/3] object-cover"
             />

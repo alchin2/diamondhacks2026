@@ -2,6 +2,17 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router";
 import { Search } from "lucide-react";
 import Masonry from "react-responsive-masonry";
+import { ImageWithFallback } from "./figma/ImageWithFallback";
+
+const FALLBACK_IMAGE = "https://via.placeholder.com/400?text=No+Image";
+
+type FeedItem = {
+  id: string;
+  name: string;
+  category: string;
+  condition: string;
+  image_urls?: string[];
+};
 
 const categories = [
   "All",
@@ -17,7 +28,7 @@ const categories = [
 export function Feed() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
-  const [items, setItems] = useState<any[]>([]);
+  const [items, setItems] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -92,8 +103,8 @@ export function Feed() {
             <Link key={item.id} to={`/item/${item.id}`}>
               <div className="bg-white rounded-xl overflow-hidden hover:shadow-lg transition-shadow cursor-pointer">
                 <div className="aspect-[4/3] overflow-hidden">
-                  <img
-                    src={item.image_url}
+                  <ImageWithFallback
+                    src={item.image_urls?.[0] || FALLBACK_IMAGE}
                     alt={item.name}
                     className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
                   />

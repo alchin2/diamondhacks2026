@@ -1,6 +1,9 @@
 import { useParams, Link } from "react-router";
 import { ArrowLeft } from "lucide-react";
 import { useState, useEffect } from "react";
+import { ImageWithFallback } from "./figma/ImageWithFallback";
+
+const FALLBACK_IMAGE = "https://via.placeholder.com/800x600?text=No+Image";
 
 export function ItemDetails() {
   const { id } = useParams();
@@ -63,8 +66,8 @@ export function ItemDetails() {
         {/* Left: Image */}
         <div>
           <div className="bg-white rounded-xl overflow-hidden mb-4">
-            <img
-              src={item.image_url}
+            <ImageWithFallback
+              src={item.image_urls?.[0] || FALLBACK_IMAGE}
               alt={item.name}
               className="w-full aspect-[4/3] object-cover"
             />

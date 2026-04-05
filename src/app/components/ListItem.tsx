@@ -1,28 +1,69 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { Upload, X } from "lucide-react";
+import { ImageWithFallback } from "./figma/ImageWithFallback";
 
 // Use real user UUID for owner_id
 const DUMMY_OWNER_ID = "19497467-e10b-4124-a65b-68c3f6b26be7";
+
+type UploadResponse = {
+  upload_url: string;
+  file_url: string;
+  method: "PUT";
+  headers: Record<string, string>;
+};
 
 export function ListItem() {
   const navigate = useNavigate();
   const [itemName, setItemName] = useState("");
   const [condition, setCondition] = useState<"Good" | "Fair" | "Poor">("Good");
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [imageUrl, setImageUrl] = useState<string | null>(null); // For API
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      setSelectedImage(file);
       const reader = new FileReader();
       reader.onload = () => setImagePreview(reader.result as string);
       reader.readAsDataURL(file);
-      // In production, upload to storage and setImageUrl to the uploaded URL
-      setImageUrl("https://via.placeholder.com/400"); // Dummy URL
     }
+  };
+
+  const resetSelectedImage = () => {
+    setSelectedImage(null);
+    setImagePreview(null);
+  };
+
+  const uploadImage = async (file: File): Promise<string> => {
+    const presignResponse = await fetch("/uploads/presign", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        file_name: file.name,
+        content_type: file.type,
+        folder: "items",
+      }),
+    });
+
+    if (!presignResponse.ok) {
+      throw new Error("Failed to prepare image upload");
+    }
+
+    const uploadData: UploadResponse = await presignResponse.json();
+    const uploadResponse = await fetch(uploadData.upload_url, {
+      method: uploadData.method,
+      headers: uploadData.headers,
+      body: file,
+    });
+
+    if (!uploadResponse.ok) {
+      throw new Error("Failed to upload image");
+    }
+
+    return uploadData.file_url;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -30,6 +71,7 @@ export function ListItem() {
     setLoading(true);
     setError("");
     try {
+      const imageUrls = selectedImage ? [await uploadImage(selectedImage)] : [];
       const res = await fetch("/items/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -40,12 +82,11 @@ export function ListItem() {
           condition: condition.toLowerCase(),
           price: 1, // Dummy price, required by API
           confidence_score: null,
-          image_url: imageUrl,
+          image_urls: imageUrls,
         }),
       });
       if (!res.ok) throw new Error("Failed to list item");
-      alert("Item listed successfully!");
-      navigate("/profile");
+      navigate("/my-items");
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -79,14 +120,14 @@ export function ListItem() {
               </label>
             ) : (
               <div className="relative">
-                <img
+                <ImageWithFallback
                   src={imagePreview}
                   alt="Preview"
                   className="w-full h-64 object-cover rounded-xl"
                 />
                 <button
                   type="button"
-                  onClick={() => setImagePreview(null)}
+                  onClick={resetSelectedImage}
                   className="absolute top-3 right-3 w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-lg hover:bg-gray-100 transition-colors"
                 >
                   <X className="w-5 h-5" />
@@ -135,7 +176,7 @@ export function ListItem() {
 
           {/* Helper Text */}
           <p className="text-[#6B6B6B] text-sm">
-            Our system will automatically categorize your item and estimate its value.
+            We will upload your image to S3 first, then create the item using the returned image URL.
           </p>
 
           {/* Error Message */}

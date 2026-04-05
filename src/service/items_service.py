@@ -3,12 +3,25 @@ import logging
 from typing import Optional
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, model_validator
 
 from core.exceptions import ExternalServiceError, NotFoundError, ValidationError
 from service.base import SupabaseService
 
 logger = logging.getLogger(__name__)
+
+
+def _split_image_urls(raw_value: Optional[str]) -> list[str]:
+    if not raw_value:
+        return []
+    return [url.strip() for url in raw_value.split(",") if url.strip()]
+
+
+def _join_image_urls(image_urls: list[str]) -> str:
+    cleaned_urls = [url.strip() for url in image_urls if url and url.strip()]
+    if not cleaned_urls:
+        raise ValidationError("At least one image URL is required.")
+    return ",".join(cleaned_urls)
 
 # Schema Definitions
 class ItemBase(BaseModel):
@@ -18,7 +31,20 @@ class ItemBase(BaseModel):
     condition: str = Field(min_length=1, max_length=40)
     price: float = Field(gt=0)
     confidence_score: Optional[float] = Field(default=None, ge=0, le=1)
-    image_url: Optional[str] = None
+    image_urls: list[AnyHttpUrl] = Field(min_length=1)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_legacy_image_url(cls, data):
+        if not isinstance(data, dict):
+            return data
+
+        normalized = dict(data)
+        if "image_urls" not in normalized and "image_url" in normalized:
+            raw_value = normalized.get("image_url")
+            if isinstance(raw_value, str):
+                normalized["image_urls"] = _split_image_urls(raw_value)
+        return normalized
 
 class ItemCreate(ItemBase):
     pass
@@ -29,7 +55,20 @@ class ItemUpdate(BaseModel):
     condition: Optional[str] = None
     price: Optional[float] = None
     confidence_score: Optional[float] = None
-    image_url: Optional[str] = None
+    image_urls: Optional[list[AnyHttpUrl]] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_legacy_image_url(cls, data):
+        if not isinstance(data, dict):
+            return data
+
+        normalized = dict(data)
+        if "image_urls" not in normalized and "image_url" in normalized:
+            raw_value = normalized.get("image_url")
+            if isinstance(raw_value, str):
+                normalized["image_urls"] = _split_image_urls(raw_value)
+        return normalized
 
 class Item(ItemBase):
     id: UUID
@@ -39,10 +78,16 @@ class Item(ItemBase):
 
 
 class ItemService(SupabaseService):
+    @staticmethod
+    def _format_item(item_row: dict) -> dict:
+        formatted = dict(item_row)
+        formatted["image_urls"] = _split_image_urls(formatted.get("image_url"))
+        return formatted
+
     def get_items(self):
         try:
             response = self.client.table("items").select("*").execute()
-            return response.data
+            return [self._format_item(item) for item in response.data or []]
         except Exception as e:
             logger.exception("Error fetching items", exc_info=e)
             raise ExternalServiceError("Could not fetch items.") from e
@@ -53,17 +98,19 @@ class ItemService(SupabaseService):
             response = self.client.table("items").select("*").eq("id", item_id).limit(1).execute()
             if not response.data:
                 raise NotFoundError(f"Item '{item_id}' not found.")
-            return response.data[0]
+            return self._format_item(response.data[0])
         except NotFoundError:
             raise
         except Exception as e:
             logger.exception("Error fetching item %s", item_id, exc_info=e)
             raise ExternalServiceError("Could not fetch item.") from e
 
-    def create_item(self, owner_id: str, name: str, category: str, condition: str, price: float, confidence_score: Optional[float] = None, image_url: Optional[str] = None):
+    def create_item(self, owner_id: str, name: str, category: str, condition: str, price: float, confidence_score: Optional[float] = None, image_urls: Optional[list[str]] = None):
         owner_id = self.require_identifier(owner_id, "owner_id")
         if price <= 0:
             raise ValidationError("price must be greater than zero.")
+        if not image_urls:
+            raise ValidationError("At least one uploaded image is required to create an item.")
         try:
             new_item_data = {
                 "id": str(uuid4()),
@@ -73,7 +120,7 @@ class ItemService(SupabaseService):
                 "condition": condition.strip(),
                 "price": price,
                 "confidence_score": confidence_score,
-                "image_url": image_url,
+                "image_url": _join_image_urls(image_urls),
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }
 
@@ -82,7 +129,7 @@ class ItemService(SupabaseService):
             if not response.data:
                 raise ValidationError("Failed to create item.")
 
-            return response.data[0]
+            return self._format_item(response.data[0])
         except ValidationError:
             raise
         except Exception as e:
@@ -97,13 +144,18 @@ class ItemService(SupabaseService):
         if "price" in update_data and update_data["price"] is not None and update_data["price"] <= 0:
             raise ValidationError("price must be greater than zero.")
 
+        if "image_urls" in update_data:
+            raw_image_urls = update_data.pop("image_urls")
+            if raw_image_urls is not None:
+                update_data["image_url"] = _join_image_urls([str(url) for url in raw_image_urls])
+
         try:
             response = self.client.table("items").update(update_data).eq("id", item_id).execute()
 
             if not response.data:
                 raise NotFoundError(f"Item '{item_id}' not found.")
 
-            return response.data[0]
+            return self._format_item(response.data[0])
         except (NotFoundError, ValidationError):
             raise
         except Exception as e:
