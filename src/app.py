@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from controller.rest_api.chat_controller import create_chat_routes
@@ -5,6 +7,8 @@ from controller.rest_api.negotiation_controller import create_negotiation_routes
 from websocket.chat_ws import router as chat_ws_router
 from controller.rest_api.item_controller import create_item_routes
 from controller.rest_api.deal_contoller import create_deal_routes
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
 def create_application() -> FastAPI:
     app = FastAPI(
