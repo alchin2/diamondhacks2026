@@ -11,6 +11,11 @@ class MatchRequest(BaseModel):
     condition: str | None = None
 
 
+class AgentDealRequest(BaseModel):
+    category: str | None = None
+    condition: str | None = None
+
+
 def create_match_routes() -> APIRouter:
     router = APIRouter(prefix="/match", tags=["Matching"])
     service = MatchingService()
@@ -31,6 +36,16 @@ def create_match_routes() -> APIRouter:
             name=request.name,
             condition=request.condition,
             limit=limit,
+        )
+
+    @router.post("/{user_id}/auto-deal")
+    def create_agent_selected_deal(user_id: str, request: AgentDealRequest):
+        """Agent picks the best trade from the user's full collection, creates
+        the deal, and runs AI negotiation. User only needs to provide their ID."""
+        return service.create_best_agent_deal(
+            user_id=user_id,
+            category=request.category,
+            condition=request.condition,
         )
 
     return router

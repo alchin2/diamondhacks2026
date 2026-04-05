@@ -25,13 +25,13 @@ def create_application() -> FastAPI:
         version="1.1.0",
         license_info={"name": "MIT License"},
         openapi_tags=[
-            {"name": "Chat", "description": "Chatroom management for deals"},
-            {"name": "Deals", "description": "Trade deal lifecycle management"},
+            {"name": "Users", "description": "User profiles and preferences"},
             {"name": "Items", "description": "Marketplace inventory management"},
+            {"name": "Deals", "description": "Trade deal lifecycle management"},
+            {"name": "Chat", "description": "Chatroom management for deals"},
             {"name": "Negotiation", "description": "AI agent deal negotiation"},
             {"name": "Matching", "description": "Smart trade matching"},
             {"name": "Uploads", "description": "S3 upload preparation endpoints"},
-            {"name": "Users", "description": "User profiles and preferences"},
             {"name": "System", "description": "Operational endpoints"},
         ],
     )
@@ -63,14 +63,15 @@ def create_application() -> FastAPI:
     @app.get("/health", tags=["System"])
     def health_check() -> dict:
         return {"status": "ok"}
-
+    
+    app.include_router(create_user_routes())
+    app.include_router(create_item_routes())
+    app.include_router(create_upload_routes())
     app.include_router(create_chat_routes())
     app.include_router(create_deal_routes())
-    app.include_router(create_item_routes())
     app.include_router(create_match_routes())
     app.include_router(create_negotiation_routes())
-    app.include_router(create_upload_routes())
-    app.include_router(create_user_routes())
+
 
     return app
 
